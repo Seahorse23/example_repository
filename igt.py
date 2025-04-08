@@ -4,21 +4,6 @@ def parse_issues_IGT(issues):
     # Init pro chart data
     stat={}
 
-    # Inicializace počitadla pro příčiny incidentů
-    cause_count = Counter()
-    cause_downtime = defaultdict(int)
-
-    # Inicializace statistik pro služby
-    service_stats = defaultdict(lambda: {
-        "name": "",
-        "critical": False,
-        "downtime": {"critical": 0, "major": 0, "minor": 0},
-        "count": {"critical": 0, "major": 0, "minor": 0},
-    })
-    total_stats = {
-        "downtime": {"critical": 0, "major": 0, "minor": 0},
-        "count": {"critical": 0, "major": 0, "minor": 0},
-    }
     #for issue in issues['issues']:
     for issue in issues:
         #if issue['fields']['customfield_11379'] is None:    # End Outage
@@ -46,7 +31,16 @@ def parse_issues_IGT(issues):
 
         #data['end']=issue['fields']['customfield_11379']
         month = data['end'][:7] 
-        data['created']=issue['fields']['created']
+        
+        created_raw = issue['fields']['created']
+        dt_c = datetime.strptime(created_raw, '%Y-%m-%dT%H:%M:%S.%f%z')
+        data['created'] = dt_c.strftime('%d/%m/%Y %H:%M') 
+
+        updated_raw = issue['fields']['updated']
+        dt_u= datetime.strptime(updated_raw, '%Y-%m-%dT%H:%M:%S.%f%z')
+        data['updated'] = dt_u.strftime('%d/%m/%Y %H:%M') 
+        
+        data['time_to_resolution']=issue['fields']['customfield_10052']['completedCycles']['remainingTime']
         #pprint(data['end'])
 # USERS:
 
@@ -58,30 +52,6 @@ def parse_issues_IGT(issues):
         else:
             data['assignee'] = None
             data['assignee_email'] = None
-# SERVICES:
-        #pprint(issue['fields']['customfield_11382'])
-#        data['services_affected'],data['services_crit'],data['emails']=services(issue['fields']['customfield_11382'])
-        services_data = issue['fields'].get('customfield_11382', None)
-        if services_data is not None:
-            data['services_affected'], data['services_crit'], data['emails'] = services(services_data)
-        else:
-            data['services_affected'] = []
-            data['services_crit'] = ""
-            data['emails'] = {'BO': [], 'TO': []}  # Prázdné seznamy pro konzistenci
-
-
-
-        data['timeline']=issue['fields'].get('customfield_11078', None)
-        data['description']=issue['fields']['description']
-        data['origin_source'] = (
-            [item['value'] for item in  issue['fields']['customfield_11448']]
-            if issue['fields']['customfield_11448'] is not None
-            else None
-        )
-        data['solver_statement']=issue['fields']['customfield_11451']
-        data['action_points']=issue['fields']['customfield_11452']
-        data['manager_summary']=issue['fields']['customfield_11491']
-        parsed_issues.append(data)
 
 
         # Vytvoření klíče z kombinace měsíce a priority
@@ -139,3 +109,56 @@ def parse_issues_IGT(issues):
     }
     
     return out
+
+def html_format_list_IGT(parsed_issues):
+    
+    html = """
+    <table style='padding: 2px 8px;'>
+    <tr><th align='left'>Link</th><th align='left'>Souhrn</th><th align='left'>Assignee</th><th align='left'>Vytvořeno</th></tr>
+    """
+    for issue in parsed_issues:
+        #pprint(issue)
+    
+
+        jira_link = f"<a href='{config['jira']['server']}/browse/{issue['key']}'>{issue['key']}</a>"
+        services_affected = ', '.join(service['Name'] for service in issue['services_affected'])
+
+        html += f"""
+        <tr>
+            <td rowspan=2 style='vertical-align: top; padding: 8px; white-space: nowrap;'>{jira_link}</td>
+            <td style='vertical-align: top;'><strong>{issue['summary']}</strong></td>
+            <td style='vertical-align: top;'>{issue['type']}</td>
+            <td style='vertical-align: top;'>{issue['assignee']}</td>
+            <td style='vertical-align: top;'>{issue['severity']}</td>
+            <td style='vertical-align: top;'>{issue['created']}</td>
+            <td style='vertical-align: top;'>{issue['updated']}</td>
+            <td style='vertical-align: top;'>{issue['time_to_resolution']}</td>
+        </tr>
+
+        <tr><td colspan=3><hr></td></tr>
+        
+        """
+    
+
+
+    html += "</table>"
+
+    
+    return html
+
+
+
+
+
+
+
+
+
+
+        customfield_10052 = issue['fields'].get('customfield_10052', {})  # Fallback to empty dict
+        completed_cycles = customfield_10052.get('completedCycles', [])  
+
+        if completed_cycles:  # Ensure list is not empty
+            data['time_to_resolution'] = completed_cycles[0]['remainingTime']['friendly']  # Extract the value
+        else:
+            data['time_to_resolution'] = "No completed cycles available"  # Handle empty lists
